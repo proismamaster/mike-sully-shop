@@ -1,0 +1,105 @@
+:root {
+  --ms-bg-1: #d1ebf3;
+  --ms-bg-2: #f4fbff;
+  --ms-surface: rgba(255, 255, 255, 0.9);
+  --ms-text: #0f172a;
+  --ms-muted: #475569;
+  --ms-primary: #0d6efd;
+  --ms-success: #198754;
+  --ms-danger: #dc3545;
+  --ms-radius: 18px;
+  --ms-shadow: 0 14px 40px rgba(2, 8, 23, 0.12);
+  --ms-shadow-sm: 0 10px 24px rgba(2, 8, 23, 0.10);
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  color: var(--ms-text);
+  background-image:
+    radial-gradient(900px 500px at 15% 0%, rgba(13, 110, 253, 0.20), transparent 60%),
+    radial-gradient(700px 420px at 85% 10%, rgba(25, 135, 84, 0.20), transparent 60%),
+    linear-gradient(180deg, var(--ms-bg-2) 0%, var(--ms-bg-1) 100%);
+  background-attachment: fixed;
+}
+
+.navbar {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.navbar-brand {
+  letter-spacing: 0.3px;
+}
+
+.card {
+  border-radius: var(--ms-radius) !important;
+  box-shadow: var(--ms-shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+.card.shadow-lg,
+.card.shadow {
+  box-shadow: var(--ms-shadow) !important;
+}
+
+.btn {
+  border-radius: 14px;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(2, 8, 23, 0.14);
+}
+
+.btn:active {
+  transform: translateY(0);
+}
+
+.btn-success {
+  box-shadow: 0 10px 22px rgba(25, 135, 84, 0.22);
+}
+
+.btn-primary {
+  box-shadow: 0 10px 22px rgba(13, 110, 253, 0.22);
+}
+
+.form-control,
+.form-select,
+.input-group-text {
+  border-radius: 14px;
+}
+
+.input-group > :not(:first-child):not(.dropdown-menu):not(.valid-tooltip):not(.valid-feedback):not(.invalid-tooltip):not(.invalid-feedback) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.input-group > :not(:last-child):not(.dropdown-toggle):not(.dropdown-menu):not(.dropdown-menu.show):not(.valid-tooltip):not(.valid-feedback):not(.invalid-tooltip):not(.invalid-feedback) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.table {
+  --bs-table-bg: transparent;
+}
+
+.badge {
+  border-radius: 999px;
+}
+
+.breadcrumb a {
+  text-decoration: none;
+}
+
+footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+img {
+  image-rendering: -webkit-optimize-contrast;
+}
