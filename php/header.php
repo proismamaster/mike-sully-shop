@@ -2,7 +2,13 @@
 // Controlliamo se la sessione (la memoria temporanea del server) è già accesa.
 // Se non lo è, la accendiamo per poter leggere il carrello e l'utente loggato.
 if (session_status() === PHP_SESSION_NONE) {
+    // Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+    // inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', '1');
+    ini_set('session.cookie_samesite', 'Lax');
     session_start();
+
 }
 
 // Scopriamo come si chiama la pagina in cui ci troviamo adesso 

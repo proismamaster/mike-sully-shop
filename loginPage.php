@@ -1,5 +1,11 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 if (isset($_SESSION['utente_id'])) {
     header('Location: homePage.php');
     exit();
@@ -13,7 +19,7 @@ if (isset($_SESSION['utente_id'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
 
   <body>
@@ -36,7 +42,11 @@ if (isset($_SESSION['utente_id'])) {
                 <i class="bi bi-check-circle-fill me-2"></i> Account creato! Accedi ora.
               </div>
             <?php endif; ?>
-            <?php if (isset($_GET['error'])): ?>
+            <?php if (($_GET['error'] ?? '') === 'troppi_tentativi'): ?>
+              <div class="alert alert-danger py-2 small mb-3 mss-alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> Troppi tentativi falliti. Riprova tra qualche minuto.
+              </div>
+            <?php elseif (isset($_GET['error'])): ?>
               <div class="alert alert-danger py-2 small mb-3 mss-alert">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i> Email o password errati.
               </div>

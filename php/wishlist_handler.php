@@ -1,5 +1,11 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'db_connection.php';
 
 // Prendiamo i dati che ci passano dal click del cuoricino (in PHP si fa così)
@@ -100,8 +106,17 @@ if ($richiestaNascostaAjax) {
     ]);
 }
 
-// Se Javascript non funziona o la richiesta è classica, lo riportiamo fisicamente alla pagina in cui era
-$paginaPrecedente = $_SERVER['HTTP_REFERER'] ?? '../homePage.php';
+// Se Javascript non funziona o la richiesta è classica, lo riportiamo fisicamente alla pagina in cui era.
+// Validiamo il referer per evitare che qualcuno costruisca un link che rimanda l'utente a un sito esterno
+// (open redirect): lo accettiamo solo se punta al nostro stesso host, altrimenti torniamo alla home.
+$paginaPrecedente = '../homePage.php';
+$referer = $_SERVER['HTTP_REFERER'] ?? '';
+if ($referer !== '') {
+    $refererHost = parse_url($referer, PHP_URL_HOST);
+    if ($refererHost !== null && $refererHost === ($_SERVER['HTTP_HOST'] ?? null)) {
+        $paginaPrecedente = $referer;
+    }
+}
 header('Location: ' . $paginaPrecedente);
 exit();
 ?>

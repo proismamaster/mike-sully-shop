@@ -1,10 +1,32 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'php/db_connection.php';
 require_once 'php/order_functions.php';
 
-$orderId = (int)($_GET['ordine'] ?? ($_SESSION['ultimo_ordine'] ?? 0));
-$order = $orderId > 0 ? mss_fetch_order_by_id($conn, $orderId) : null;
+// Un ordine è visibile solo a chi l'ha appena piazzato in questa sessione
+// (anche da ospite) o al proprietario loggato — mai per ID a chiunque altro.
+$lastOwnOrderId = isset($_SESSION['ultimo_ordine']) ? (int)$_SESSION['ultimo_ordine'] : 0;
+$loggedInUserId = isset($_SESSION['utente_id']) ? (int)$_SESSION['utente_id'] : null;
+$requestedId = isset($_GET['ordine']) ? (int)$_GET['ordine'] : 0;
+$orderId = $requestedId > 0 ? $requestedId : $lastOwnOrderId;
+
+$order = null;
+if ($orderId > 0) {
+    $candidate = mss_fetch_order_by_id($conn, $orderId);
+    if ($candidate) {
+        $isJustPlaced = $orderId === $lastOwnOrderId;
+        $isOwnAccount = $loggedInUserId !== null && (int)$candidate['utente_id'] === $loggedInUserId;
+        if ($isJustPlaced || $isOwnAccount) {
+            $order = $candidate;
+        }
+    }
+}
 ?>
 <!doctype html>
 <html lang="it">
@@ -14,7 +36,7 @@ $order = $orderId > 0 ? mss_fetch_order_by_id($conn, $orderId) : null;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body>
     <?php include 'php/header.php'; ?>

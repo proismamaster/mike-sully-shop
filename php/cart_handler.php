@@ -1,5 +1,10 @@
 <?php
 // Avviamo la sessione per ricordare i prodotti del carrello
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
 
 require_once 'db_connection.php';
@@ -44,9 +49,14 @@ function sendJson($datiPacchetto, $codiceStato = 200) {
     exit();
 }
 
-// Leggiamo cosa vuole fare l'utente, cercando sia nei form invisibili (POST) che nell'URL (GET)
-$azione = $_POST['azione'] ?? $_GET['azione'] ?? '';
-$prodottoId = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
+// Le azioni sul carrello modificano dati (sessione + giacenza), quindi le accettiamo SOLO da POST:
+// un link o una <img> da un altro sito non deve poter svuotare o alterare il carrello di un utente.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    header('Location: ../cart.php');
+    exit();
+}
+$azione = $_POST['azione'] ?? '';
+$prodottoId = (int)($_POST['id'] ?? 0);
 
 // Capiamo se dobbiamo rispondere in JSON o cambiare pagina fisicamente
 $isAjax = isAjaxRequest();

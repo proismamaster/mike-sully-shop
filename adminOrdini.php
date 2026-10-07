@@ -126,7 +126,7 @@ if ($prodotto !== '' && !empty($orders)) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body class="mss-page">
     <?php include 'php/header.php'; ?>
@@ -184,14 +184,14 @@ if ($prodotto !== '' && !empty($orders)) {
         <div class="col-12">
           <div class="mss-auth-card">
             <div class="mss-panel-header mss-panel-header-primary">
-              <h5 class="mb-0 fw-bold">Tutti gli orders</h5>
+              <h5 class="mb-0 fw-bold">Tutti gli ordini</h5>
             </div>
             <div class="card-body p-0">
               <?php if (empty($orders)): ?>
                 <div class="p-5 text-center">
                   <i class="bi bi-inboxes mss-empty-icon"></i>
                   <h4 class="mt-3 fw-bold mss-empty-title">Nessun ordine disponibile</h4>
-                  <p class="mss-empty-text mb-0">Gli orders degli users appariranno qui non appena completeranno un acquisto.</p>
+                  <p class="mss-empty-text mb-0">Gli ordini dei clienti appariranno qui non appena completeranno un acquisto.</p>
                 </div>
               <?php else: ?>
                 <div class="table-responsive">

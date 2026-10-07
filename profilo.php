@@ -3,7 +3,13 @@ require_once 'php/db_connection.php';
 
 if (!isset($_SESSION['utente_id'])) {
     if (session_status() === PHP_SESSION_NONE) {
+        // Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+        // inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+        ini_set('session.cookie_httponly', '1');
+        ini_set('session.cookie_secure', '1');
+        ini_set('session.cookie_samesite', 'Lax');
         session_start();
+
     }
     if (!isset($_SESSION['utente_id'])) {
         header('Location: loginPage.php');
@@ -44,7 +50,7 @@ $siamoInFaseOtp = isset($_GET['otp_step']) && isset($_SESSION['pending_profile_u
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body class="mss-page">
 
@@ -81,6 +87,16 @@ $siamoInFaseOtp = isset($_GET['otp_step']) && isset($_SESSION['pending_profile_u
                 <i class="bi bi-exclamation-triangle-fill me-2"></i> Le password non coincidono oppure la password è troppo corta (min 6 caratteri).
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
               </div>
+            <?php elseif ($messaggioErrore === 'csrf'): ?>
+              <div class="alert alert-danger py-2 small alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> Sessione scaduta o richiesta non valida. Riprova.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
+            <?php elseif ($messaggioErrore === 'current_password'): ?>
+              <div class="alert alert-danger py-2 small alert-dismissible fade show">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> Password attuale errata o mancante.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+              </div>
             <?php elseif ($messaggioErrore === 'same_password'): ?>
               <div class="alert alert-danger py-2 small alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i> La nuova password non può essere uguale a quella attuale.
@@ -99,7 +115,13 @@ $siamoInFaseOtp = isset($_GET['otp_step']) && isset($_SESSION['pending_profile_u
             <?php endif; ?>
 
             <?php if ($siamoInFaseOtp): ?>
+              <?php if (defined('MSS_DEMO_MODE') && isset($_SESSION['mss_demo_otp'])): ?>
+                <div class="alert alert-info small text-start">
+                  <i class="bi bi-info-circle me-1"></i> Demo: le email non partono davvero. Il codice è <strong><?= (int)$_SESSION['mss_demo_otp'] ?></strong>.
+                </div>
+              <?php endif; ?>
               <form action="php/update_profile.php" method="POST">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(mss_csrf_token()) ?>">
                 <div class="mb-3 text-start">
                   <label class="form-label fw-bold">Codice OTP di verifica</label>
                   <div class="input-group">
@@ -117,6 +139,7 @@ $siamoInFaseOtp = isset($_GET['otp_step']) && isset($_SESSION['pending_profile_u
               </form>
             <?php else: ?>
               <form action="php/update_profile.php" method="POST">
+              <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(mss_csrf_token()) ?>">
               <div class="row g-3 mb-3">
                 <div class="col-12 col-sm-6">
                   <label class="form-label fw-bold">Nome</label>
@@ -136,8 +159,19 @@ $siamoInFaseOtp = isset($_GET['otp_step']) && isset($_SESSION['pending_profile_u
                 </div>
               </div>
 
+              <div class="mb-3">
+                <label class="form-label fw-bold">Password attuale</label>
+                <div class="input-group">
+                  <input type="password" name="current_password" id="passCurrent" class="form-control mss-input" placeholder="Richiesta per confermare le modifiche" required>
+                  <button class="btn btn-outline-secondary mss-btn-outline toggle-password" type="button" data-target="passCurrent">
+                    <i class="bi bi-eye"></i>
+                  </button>
+                </div>
+                <div class="form-text">Per sicurezza, conferma la password attuale per salvare qualunque modifica al profilo.</div>
+              </div>
+
               <hr class="my-4">
-              <p class="small text-muted mb-2">Lascia vuoti i campi password se non vuoi cambiarla.</p>
+              <p class="small text-muted mb-2">Lascia vuoti i campi sotto se non vuoi cambiare la password.</p>
 
               <div class="row g-3 mb-4">
                 <div class="col-12 col-sm-6">

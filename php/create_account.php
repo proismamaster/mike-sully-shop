@@ -1,5 +1,11 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'db_connection.php';
 
 // Se qualcuno tenta di aprire questo file furbescamente digitando il link senza inviare il modulo (metodo POST)
@@ -15,12 +21,14 @@ $email = trim($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
 $passwordDiConferma = $_POST['password_confirm'] ?? '';
 
-// Controlliamo se ha indicato un ruolo. Di base è tutti sono clienti.
-$ruoloScelto = trim($_POST['ruolo'] ?? 'cliente');
-
-// Normalizzazione: se qualcuno fa il furbetto dal codice per darsi un ruolo che non esiste, forziamolo a cliente.
-if (!in_array($ruoloScelto, ['admin', 'cliente'])) {
-    $ruoloScelto = 'cliente';
+// Di base chiunque si registra è un cliente. Solo un amministratore già loggato
+// può creare un altro account admin: il valore mandato dal form pubblico non conta MAI.
+$ruoloScelto = 'cliente';
+if (isset($_SESSION['ruolo']) && $_SESSION['ruolo'] === 'admin') {
+    $ruoloRichiesto = trim($_POST['ruolo'] ?? 'cliente');
+    if (in_array($ruoloRichiesto, ['admin', 'cliente'], true)) {
+        $ruoloScelto = $ruoloRichiesto;
+    }
 }
 
 // Salviamo quello che ha scritto l'utente (così se sbaglia, quando ricarica la pagina glieli rimettiamo e non deve riscrivere tutto)
@@ -83,13 +91,18 @@ if ($istruzioneDiInserimento->execute()) {
     $istruzioneDiInserimento->close();
 
     // ECCEZIONE: Se stiamo creando l'account agendo come Amministratori dalla pagina del Magazzino...
-    if (isset($_SESSION['ruolo']) && $_SESSION['ruolo'] === 'admin' && strpos($_SERVER['HTTP_REFERER'], 'adminMagazzino.php') !== false) {
-        // Torniamo nel magazzino e mostriamo il messaggio verde!
+    $referer = $_SERVER['HTTP_REFERER'] ?? '';
+    if (isset($_SESSION['ruolo']) && $_SESSION['ruolo'] === 'admin' && strpos($referer, 'adminMagazzino.php') !== false) {
+        // Torniamo nel magazzino e mostriamo il messaggio verde! (Non tocchiamo
+        // la sessione dell'admin: sta creando un account per qualcun altro,
+        // non deve ritrovarsi loggato come il nuovo utente.)
         header('Location: ../adminMagazzino.php?success=account');
         exit();
     }
 
     // Se è un utente normale, gli facciamo il login automatico subito dopo essersi iscritto. Benvenuto!
+    // Nuovo ID di sessione: stesso motivo del login normale, evita session fixation.
+    session_regenerate_id(true);
     $_SESSION['utente_id'] = $nuovoIdUtente;
     $_SESSION['user'] = $nome . ' ' . $cognome;
     $_SESSION['ruolo'] = $ruoloScelto;

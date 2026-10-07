@@ -26,6 +26,10 @@ function mss_mailer_from_config() {
 
 // La funzione principale che spedisce fisicamente l'email
 function mss_send_mail($destinatario, $oggetto, $contenutoHtml) {
+    // In demo le email non partono: niente SMTP con credenziali vuote che fallisce dopo secondi.
+    if (defined('MSS_DEMO_MODE')) {
+        return true;
+    }
     // Prendiamo le configurazioni
     $configurazione = mss_mailer_from_config();
 

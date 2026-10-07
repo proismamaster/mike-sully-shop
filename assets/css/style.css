@@ -1140,6 +1140,13 @@ hr {
   pointer-events: none;
   user-select: none;
 }
+/* Con i prodotti della collezione il riquadro mostra le foto, non le icone decorative sbiadite. */
+.mss-banner-icons.has-products { font-size: 0.9rem; opacity: 1; color: var(--text); gap: 1.5rem; }
+.mss-banner-icons.has-products img {
+  width: 112px; height: 112px; object-fit: contain; padding: 10px;
+  background: #fff; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+}
+.mss-banner-icons.has-products .small { max-width: 112px; margin-inline: auto; line-height: 1.3; }
 @media (max-width: 768px) {
   .mss-banner-fullwidth { padding: 3.5rem 0; }
   .mss-banner-fullwidth-inner { flex-direction: column; text-align: center; }
@@ -1211,3 +1218,8 @@ hr {
   .mss-card:hover { transform: translateY(-5px); }
   .mss-detail-card .row { flex-direction: column; }
 }
+
+/* Inventario del magazzino: intestazioni e celle più compatte, così la tabella sta nel suo riquadro anche a 1366 px. */
+.mss-inventory th, .mss-inventory td { padding-left: 0.35rem; padding-right: 0.35rem; }
+.mss-inventory th { font-size: 0.74rem; white-space: nowrap; }
+.mss-inventory th .bi { margin-right: 0.15rem !important; }

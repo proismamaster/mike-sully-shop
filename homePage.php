@@ -1,5 +1,11 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'php/db_connection.php';
 
 $collectionSettings = mss_get_home_collection($conn);
@@ -13,7 +19,7 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
 
   <body>
@@ -30,11 +36,47 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
             />
             <h1>Monstropolis Store</h1>
             <p>Trova tutto quello che serve per le tue urla... o risate!<br>Qualità garantita da Mike Wazowski in persona.</p>
-            <a href="#products" class="btn mss-btn-primary mt-3 px-4"><i class="bi bi-shop me-2"></i>Scopri i products</a>
+            <a href="#products" class="btn mss-btn-primary mt-3 px-4"><i class="bi bi-shop me-2"></i>Scopri i prodotti</a>
           </div>
         </div>
       </div>
     </div>
+
+    <?php if (!empty($featuredProducts)): ?>
+    <div class="container mt-4">
+      <div class="mss-section-title mb-3">
+        <i class="bi bi-stars me-2 text-gradient"></i> Prodotti in evidenza
+      </div>
+      <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-4 justify-content-center">
+        <?php foreach ($featuredProducts as $featured): ?>
+          <div class="col">
+            <div class="mss-card h-100">
+              <a href="productDetail.php?id=<?= (int)$featured['id'] ?>">
+                <div class="card-img-wrapper">
+                  <img src="<?= htmlspecialchars(mss_get_product_images($featured['immagine_path'])[0] ?? '') ?>" alt="<?= htmlspecialchars($featured['nome']) ?>">
+                </div>
+              </a>
+              <div class="card-body d-flex flex-column">
+                <?php if (!empty($featured['cat'])): ?><div class="badge-cat"><?= htmlspecialchars($featured['cat']) ?></div><?php endif; ?>
+                <h5 class="card-title"><?= htmlspecialchars($featured['nome']) ?></h5>
+                <div class="mt-auto pt-2">
+                  <?php if (!empty($featured['sconto_percentuale']) && $featured['sconto_percentuale'] > 0): ?>
+                    <p class="price mb-0">
+                      <span class="text-decoration-line-through text-muted" style="font-size:0.85em; -webkit-text-fill-color: initial;"><?= number_format($featured['prezzo'], 2, ',', '.') ?>€</span>
+                      <span class="text-danger ms-1" style="-webkit-text-fill-color: initial;"><?= number_format($featured['prezzo'] * (1 - $featured['sconto_percentuale']/100), 2, ',', '.') ?>€</span>
+                      <span class="badge bg-danger ms-1" style="-webkit-text-fill-color: initial; color: white;">-<?= (int)$featured['sconto_percentuale'] ?>%</span>
+                    </p>
+                  <?php else: ?>
+                    <p class="price mb-0"><?= number_format($featured['prezzo'], 2, ',', '.') ?>€</p>
+                  <?php endif; ?>
+                </div>
+              </div>
+            </div>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </div>
+    <?php endif; ?>
 
     <div id="products" class="container mt-4 mb-5">
       <?php
@@ -142,7 +184,7 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
           <div class="flex-grow-1">
             <form role="search" action="homePage.php" method="GET" class="d-flex flex-column">
               <?php if ($cat): ?><input type="hidden" name="cat" value="<?= htmlspecialchars($cat) ?>"><?php endif; ?>
-              <label class="form-label fw-semibold mb-1"><i class="bi bi-search me-1"></i>Cerca products</label>
+              <label class="form-label fw-semibold mb-1"><i class="bi bi-search me-1"></i>Cerca prodotti</label>
               <div class="input-group">
                 <input class="form-control mss-input" type="search" name="search" placeholder="Cerca per nome..." value="<?= htmlspecialchars($search) ?>">
                 <button class="btn mss-btn-primary px-4" type="submit"><i class="bi bi-search"></i></button>
@@ -154,7 +196,7 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
               <?php if ($search): ?><input type="hidden" name="search" value="<?= htmlspecialchars($search) ?>"><?php endif; ?>
               <label class="form-label fw-semibold mb-1"><i class="bi bi-tag me-1"></i>Categoria</label>
               <select name="cat" class="form-select mss-select" onchange="this.form.submit()">
-                <option value="" <?= $cat === '' ? 'selected' : '' ?>>Tutte le categories</option>
+                <option value="" <?= $cat === '' ? 'selected' : '' ?>>Tutte le categorie</option>
                 <?php
                   $catRes = $conn->query("SELECT nome FROM categories ORDER BY nome ASC");
                   while ($cRow = $catRes->fetch_assoc()):
@@ -267,18 +309,27 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
             <?= htmlspecialchars($badgeTxt) ?>
           </a>
           <h2><?= htmlspecialchars($collectionSettings['title'] ?? 'Scopri la Nuova Collezione') ?></h2>
-          <p><?= $collectionSettings['subtitle'] ?? 'Articoli esclusivi e in edizione limitata ispirati al mondo di Monstropolis.' ?></p>
+          <?php
+            // Normalizziamo eventuali <br> letterali già salvati nel DB da versioni
+            // precedenti (il vecchio default li scriveva così) in newline vere,
+            // così sia i dati storici che quelli nuovi (scritti con l'andare a
+            // capo nella textarea) passano dallo stesso escaping e si mostrano
+            // allo stesso modo — senza lasciare varchi per HTML iniettato.
+            $rawSubtitle = $collectionSettings['subtitle'] ?? 'Articoli esclusivi e in edizione limitata ispirati al mondo di Monstropolis.';
+            $subtitleNormalizzato = preg_replace('/\s*<br\s*\/?>\s*/i', "\n", $rawSubtitle);
+          ?>
+          <p><?= nl2br(htmlspecialchars($subtitleNormalizzato)) ?></p>
           <div class="d-flex gap-3 flex-wrap">
             <a href="homePage.php?cat=Nuova%20Collezione" class="btn mss-btn-primary">
               <i class="bi bi-stars me-2"></i>Esplora Nuova Collezione
             </a>
           </div>
         </div>
-        <div class="mss-banner-icons" aria-hidden="true">
+        <div class="mss-banner-icons<?= !empty($featuredProducts) ? ' has-products' : '' ?>" aria-hidden="true">
           <?php if (!empty($featuredProducts)): ?>
             <?php foreach (array_slice($featuredProducts, 0, 4) as $featured): ?>
               <div class="text-center">
-                <img src="<?= htmlspecialchars($featured['immagine_path']) ?>" alt="<?= htmlspecialchars($featured['nome']) ?>" class="img-fluid rounded-circle" style="width:72px;height:72px;object-fit:contain;background:rgba(255,255,255,0.75);padding:8px;">
+                <img src="<?= htmlspecialchars(mss_get_product_images($featured['immagine_path'])[0] ?? '') ?>" alt="<?= htmlspecialchars($featured['nome']) ?>" class="img-fluid rounded-circle">
                 <div class="small mt-2 fw-semibold"><?= htmlspecialchars($featured['nome']) ?></div>
               </div>
             <?php endforeach; ?>
@@ -292,49 +343,14 @@ $featuredProducts = mss_fetch_products_by_ids($conn, mss_parse_product_ids($coll
       </div>
     </div>
 
-    <?php if (!empty($featuredProducts)): ?>
-    <div class="container mt-4">
-      <div class="mss-section-title mb-3">
-        <i class="bi bi-stars me-2 text-gradient"></i> Prodotti in evidenza
-      </div>
-      <div class="row row-cols-1 row-cols-sm-2 row-cols-lg-4 g-4">
-        <?php foreach ($featuredProducts as $featured): ?>
-          <div class="col">
-            <div class="mss-card h-100">
-              <a href="productDetail.php?id=<?= (int)$featured['id'] ?>">
-                <div class="card-img-wrapper">
-                  <img src="<?= htmlspecialchars($featured['immagine_path']) ?>" alt="<?= htmlspecialchars($featured['nome']) ?>">
-                </div>
-              </a>
-              <div class="card-body d-flex flex-column">
-                <?php if (!empty($featured['cat'])): ?><div class="badge-cat"><?= htmlspecialchars($featured['cat']) ?></div><?php endif; ?>
-                <h5 class="card-title"><?= htmlspecialchars($featured['nome']) ?></h5>
-                <div class="mt-auto pt-2">
-                  <?php if (!empty($featured['sconto_percentuale']) && $featured['sconto_percentuale'] > 0): ?>
-                    <p class="price mb-0">
-                      <span class="text-decoration-line-through text-muted" style="font-size:0.85em; -webkit-text-fill-color: initial;"><?= number_format($featured['prezzo'], 2, ',', '.') ?>€</span>
-                      <span class="text-danger ms-1" style="-webkit-text-fill-color: initial;"><?= number_format($featured['prezzo'] * (1 - $featured['sconto_percentuale']/100), 2, ',', '.') ?>€</span>
-                      <span class="badge bg-danger ms-1" style="-webkit-text-fill-color: initial; color: white;">-<?= (int)$featured['sconto_percentuale'] ?>%</span>
-                    </p>
-                  <?php else: ?>
-                    <p class="price mb-0"><?= number_format($featured['prezzo'], 2, ',', '.') ?>€</p>
-                  <?php endif; ?>
-                </div>
-              </div>
-            </div>
-          </div>
-        <?php endforeach; ?>
-      </div>
-    </div>
-    <?php endif; ?>
 
     <div class="mss-section-gap-md"></div>
 
     <?php include 'php/footer.php'; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/mss-cart.js"></script>
-    <script src="assets/js/mss-wishlist.js"></script>
+    <script src="assets/js/mss-cart.js?v=<?= filemtime(__DIR__ . '/assets/js/mss-cart.js') ?>"></script>
+    <script src="assets/js/mss-wishlist.js?v=<?= filemtime(__DIR__ . '/assets/js/mss-wishlist.js') ?>"></script>
     <script>
       // Navbar scroll effect
       const navbar = document.querySelector('.mss-navbar');

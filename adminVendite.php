@@ -51,7 +51,7 @@ $stmt->close();
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body class="mss-page">
     <?php include 'php/header.php'; ?>
@@ -212,6 +212,14 @@ $stmt->close();
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+      // Nomi/email arrivano dal DB (scritti da chi si registra): non fidarsi mai
+      // e sfuggirli sempre prima di metterli in innerHTML, o un nome tipo
+      // "<img onerror=...>" scritto in fase di registrazione girerebbe nel
+      // browser dell'admin che cerca quel cliente qui.
+      const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+
       // Search transactions
       const searchT = document.getElementById('search-transactions');
       if (searchT) {
@@ -271,13 +279,14 @@ $stmt->close();
               data.clients.forEach(c => {
                 const tr = document.createElement('tr');
                 tr.setAttribute('data-row-cr', '');
+                const nomeCompleto = escHtml(`${c.nome} ${c.cognome}`);
                 tr.innerHTML = `
-                  <td data-cr-nome="${c.nome} ${c.cognome}">
-                    <div class="fw-bold">${c.nome} ${c.cognome}</div>
-                    <div class="small text-muted">${c.email}</div>
+                  <td data-cr-nome="${nomeCompleto}">
+                    <div class="fw-bold">${nomeCompleto}</div>
+                    <div class="small text-muted">${escHtml(c.email)}</div>
                   </td>
-                  <td class="text-center" data-cr-orders="${c.total_orders}">${c.total_orders}</td>
-                  <td class="text-end fw-bold" data-cr-spesa="${c.total_spent}">${c.total_spent.toFixed(2).replace('.', ',')}€</td>
+                  <td class="text-center" data-cr-orders="${Number(c.total_orders)}">${Number(c.total_orders)}</td>
+                  <td class="text-end fw-bold" data-cr-spesa="${Number(c.total_spent)}">${Number(c.total_spent).toFixed(2).replace('.', ',')}€</td>
                 `;
                 clientReportBody.appendChild(tr);
               });

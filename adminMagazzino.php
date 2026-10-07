@@ -57,11 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_product'])) {
                         if ($originalName === $item && $_FILES['immagini']['error'][$fileIdx] === UPLOAD_ERR_OK) {
                             $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
                             if (in_array($extension, $allowedExtensions, true)) {
-                                $fileName = $slug . '-' . time() . '-' . $idx . '.' . $extension;
-                                $targetPath = $uploadsDir . DIRECTORY_SEPARATOR . $fileName;
-                                if (move_uploaded_file($_FILES['immagini']['tmp_name'][$fileIdx], $targetPath)) {
-                                    $finalImages[] = 'assets/img/products/' . $fileName;
-                                    $_FILES['immagini']['name'][$fileIdx] = null; 
+                                $saved = mss_save_uploaded_image($_FILES['immagini']['tmp_name'][$fileIdx], $uploadsDir, $slug . '-' . time() . '-' . $idx . '.' . $extension);
+                                if ($saved !== null) {
+                                    $finalImages[] = $saved;
+                                    $_FILES['immagini']['name'][$fileIdx] = null;
                                 }
                             }
                             break;
@@ -121,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_delete'])) {
             }
             $stmt->close();
         }
-        $msg = "Eliminati $deleted products.";
+        $msg = "Eliminati $deleted prodotti.";
         header('Location: adminMagazzino.php?success=bulk&msg=' . urlencode($msg));
         exit();
     }
@@ -293,10 +292,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                     if ($originalName === $item && $_FILES['immagini']['error'][$fileIdx] === UPLOAD_ERR_OK) {
                         $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
                         if (in_array($extension, $allowedExtensions, true)) {
-                            $fileName = $slug . '-' . time() . '-' . $idx . '.' . $extension;
-                            $targetPath = $uploadsDir . DIRECTORY_SEPARATOR . $fileName;
-                            if (move_uploaded_file($_FILES['immagini']['tmp_name'][$fileIdx], $targetPath)) {
-                                $uploadedPaths[] = 'assets/img/products/' . $fileName;
+                            $saved = mss_save_uploaded_image($_FILES['immagini']['tmp_name'][$fileIdx], $uploadsDir, $slug . '-' . time() . '-' . $idx . '.' . $extension);
+                            if ($saved !== null) {
+                                $uploadedPaths[] = $saved;
                                 $_FILES['immagini']['name'][$fileIdx] = null;
                             }
                         }
@@ -367,7 +365,7 @@ $selectedCollectionIds = mss_parse_product_ids($collectionSettings['product_ids'
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body class="mss-page">
     <?php include 'php/header.php'; ?>
@@ -600,7 +598,7 @@ $selectedCollectionIds = mss_parse_product_ids($collectionSettings['product_ids'
 
         <!-- Modifica Giacenza Esistente -->
         <div class="col-lg-8">
-          <form id="bulk-delete-form" action="adminMagazzino.php" method="POST" onsubmit="return confirm('Eliminare i products selezionati?');">
+          <form id="bulk-delete-form" action="adminMagazzino.php" method="POST" onsubmit="return confirm('Eliminare i prodotti selezionati?');">
             <input type="hidden" name="bulk_delete" value="1">
             <div class="mss-auth-card h-100">
               <div class="mss-panel-header mss-panel-header-primary d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -614,7 +612,7 @@ $selectedCollectionIds = mss_parse_product_ids($collectionSettings['product_ids'
               </div>
               <div class="card-body p-0">
                 <div class="table-responsive">
-                  <table class="table table-hover mb-0">
+                  <table class="table table-hover mb-0 mss-inventory">
                     <thead style="background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(20,184,166,0.08) 100%);">
                       <tr>
                         <th class="ps-3" style="width: 40px;">
@@ -675,7 +673,7 @@ $selectedCollectionIds = mss_parse_product_ids($collectionSettings['product_ids'
                             <form action="adminMagazzino.php" method="POST" class="d-flex align-items-center gap-3 flex-wrap">
                               <input type="hidden" name="update_product_category" value="1">
                               <input type="hidden" name="product_id" value="<?= (int)$product['id'] ?>">
-                              <select name="categoria_id" class="form-select form-select-sm mss-select" style="min-width: 160px;" onchange="this.form.submit()">
+                              <select name="categoria_id" class="form-select form-select-sm mss-select" style="min-width: 120px;" onchange="this.form.submit()">
                                 <option value="">Seleziona…</option>
                                 <?php foreach ($categories as $cat): ?>
                                   <?php if ($cat['nome'] === 'Nuova Collezione') continue; ?>

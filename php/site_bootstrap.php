@@ -1,8 +1,86 @@
 <?php
 
+// --- PROTEZIONE CSRF (per i form più sensibili: profilo, area admin) ---
+// Un token legato alla sessione: senza saperlo in anticipo, un sito esterno
+// non può far partire di nascosto una richiesta a nome dell'utente loggato.
+
+function mss_csrf_token(): string {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function mss_csrf_valid(): bool {
+    $atteso = $_SESSION['csrf_token'] ?? '';
+    $inviato = $_POST['csrf_token'] ?? '';
+    return $atteso !== '' && is_string($inviato) && hash_equals($atteso, (string)$inviato);
+}
+
+// --- LIMITE TENTATIVI (anti brute-force su login e codici OTP) ---
+// $chiave identifica cosa si sta proteggendo, es. "login:mario@x.com" o
+// "otp:profile:mario@x.com" — così un blocco sul login non influenza l'OTP
+// e viceversa, pur condividendo la stessa tabella.
+
+function mss_rate_limited($conn, string $chiave): bool {
+    // true = bloccato (troppi tentativi recenti), false = può procedere
+    $stmt = $conn->prepare("SELECT locked_until FROM rate_limits WHERE rl_key = ? LIMIT 1");
+    $stmt->bind_param('s', $chiave);
+    $stmt->execute();
+    $riga = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $riga && $riga['locked_until'] && strtotime((string)$riga['locked_until']) > time();
+}
+
+function mss_rate_limit_hit($conn, string $chiave, int $maxTentativi = 5, int $finestraSecondi = 900): void {
+    $stmt = $conn->prepare("SELECT id, attempt_count, first_attempt_at FROM rate_limits WHERE rl_key = ? LIMIT 1");
+    $stmt->bind_param('s', $chiave);
+    $stmt->execute();
+    $riga = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$riga) {
+        $stmt = $conn->prepare("INSERT INTO rate_limits (rl_key, attempt_count, first_attempt_at) VALUES (?, 1, NOW())
+                                 ON DUPLICATE KEY UPDATE attempt_count = attempt_count + 1");
+        $stmt->bind_param('s', $chiave);
+        $stmt->execute();
+        $stmt->close();
+        return;
+    }
+
+    $finestraScaduta = (strtotime((string)$riga['first_attempt_at']) + $finestraSecondi) < time();
+    if ($finestraScaduta) {
+        $stmt = $conn->prepare("UPDATE rate_limits SET attempt_count = 1, first_attempt_at = NOW(), locked_until = NULL WHERE id = ?");
+        $idRiga = (int)$riga['id'];
+        $stmt->bind_param('i', $idRiga);
+        $stmt->execute();
+        $stmt->close();
+        return;
+    }
+
+    $nuovoConteggio = (int)$riga['attempt_count'] + 1;
+    $idRiga = (int)$riga['id'];
+    if ($nuovoConteggio >= $maxTentativi) {
+        $stmt = $conn->prepare("UPDATE rate_limits SET attempt_count = ?, locked_until = DATE_ADD(NOW(), INTERVAL ? SECOND) WHERE id = ?");
+        $stmt->bind_param('iii', $nuovoConteggio, $finestraSecondi, $idRiga);
+    } else {
+        $stmt = $conn->prepare("UPDATE rate_limits SET attempt_count = ? WHERE id = ?");
+        $stmt->bind_param('ii', $nuovoConteggio, $idRiga);
+    }
+    $stmt->execute();
+    $stmt->close();
+}
+
+function mss_rate_limit_clear($conn, string $chiave): void {
+    $stmt = $conn->prepare("DELETE FROM rate_limits WHERE rl_key = ?");
+    $stmt->bind_param('s', $chiave);
+    $stmt->execute();
+    $stmt->close();
+}
+
 // Ogni volta che il sito si connette al database, questo
 // fa un giro d'ispezione per assicurarsi che le tabelle siano in piedi e che non manchino colonne.
-function mss_bootstrap_schema(mysqli $conn): void
+function mss_bootstrap_schema($conn): void
 {
     // Elenco delle tabelle che DEBBONO esistere. Se non ci sono, le costruisce al volo.
     $queryCreazioneTabelle = [
@@ -48,6 +126,16 @@ function mss_bootstrap_schema(mysqli $conn): void
             INDEX (email),
             INDEX (purpose),
             INDEX (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // Contatore tentativi falliti (login, codici OTP) per bloccare temporaneamente
+        // chi ne sbaglia troppi di fila — senza questo, login e OTP sarebbero
+        // indovinabili a forza bruta senza alcun freno.
+        "CREATE TABLE IF NOT EXISTS rate_limits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            rl_key VARCHAR(190) NOT NULL UNIQUE,
+            attempt_count INT NOT NULL DEFAULT 0,
+            first_attempt_at DATETIME NOT NULL,
+            locked_until DATETIME NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         // Archivio storico delle email inviate
         "CREATE TABLE IF NOT EXISTS emails_outbox (
@@ -127,17 +215,31 @@ function mss_get_product_images(?string $percorso): array {
     return [$percorso]; // Se non era json, ritorna solo quell'immagine singola
 }
 
+// Salva un'immagine caricata dal magazzino e restituisce il percorso da mettere nel prodotto
+// (null se il file non va bene). L'estensione dice solo come si chiama il file: getimagesize()
+// guarda i byte veri e fallisce se non è davvero un'immagine. In demo le credenziali admin sono
+// pubbliche: l'immagine resta nel database del visitatore come data URI, niente file sul server.
+function mss_save_uploaded_image(string $tmpPath, string $uploadsDir, string $fileName): ?string {
+    $info = @getimagesize($tmpPath);
+    if ($info === false) return null;
+    if (defined('MSS_DEMO_MODE')) {
+        if (filesize($tmpPath) > 2 * 1024 * 1024) return null;
+        return 'data:' . $info['mime'] . ';base64,' . base64_encode((string)file_get_contents($tmpPath));
+    }
+    return move_uploaded_file($tmpPath, $uploadsDir . DIRECTORY_SEPARATOR . $fileName) ? 'assets/img/products/' . $fileName : null;
+}
+
 // Fornisce i testi standard della bacheca centrale (La "Nuova Collezione" nella Home)
 function mss_default_home_collection(): array {
     return [
         'badge_text' => 'NOVITÀ 2026',
         'title' => 'Scopri la Nuova Collezione',
-        'subtitle' => 'Articoli esclusivi e in edizione limitata ispirati al mondo di Monstropolis.<br>Solo per i fan più coraggiosi!',
+        'subtitle' => "Articoli esclusivi e in edizione limitata ispirati al mondo di Monstropolis.\nSolo per i fan più coraggiosi!",
         'product_ids' => '',
     ];
 }
 
-function mss_get_home_collection(mysqli $conn): array {
+function mss_get_home_collection($conn): array {
     $testiStandard = mss_default_home_collection();
     $istruzione = $conn->prepare("SELECT badge_text, title, subtitle, product_ids FROM homepage_collections WHERE id = 1 LIMIT 1");
     if (!$istruzione) {
@@ -151,7 +253,7 @@ function mss_get_home_collection(mysqli $conn): array {
     return $risultatiBacheca ?: $testiStandard;
 }
 
-function mss_save_home_collection(mysqli $conn, array $datiBacheca): bool {
+function mss_save_home_collection($conn, array $datiBacheca): bool {
     $targhetta = trim($datiBacheca['badge_text'] ?? 'NOVITÀ');
     $titolo = trim($datiBacheca['title'] ?? 'Scopri la Nuova Collezione');
     $sottotitolo = trim($datiBacheca['subtitle'] ?? '');

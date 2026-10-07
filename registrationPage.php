@@ -1,6 +1,12 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) {
+    // Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+    // inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+    ini_set('session.cookie_httponly', '1');
+    ini_set('session.cookie_secure', '1');
+    ini_set('session.cookie_samesite', 'Lax');
     session_start();
+
 }
 if (isset($_SESSION['utente_id'])) {
     header('Location: homePage.php');
@@ -42,13 +48,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_otp'])) {
   } else {
     // Genera OTP e invia via email
     $otp = random_int(100000, 999999);
+    if (defined('MSS_DEMO_MODE')) {
+      $_SESSION['mss_demo_otp'] = $otp; // in demo la mail non parte: il codice si mostra a schermo
+    }
     $_SESSION['pending_reg'] = [
       'nome' => $nome,
       'cognome' => $cognome,
       'email' => $email,
       'password' => $pass,
       'password_confirm' => $confirm,
-      'otp' => (string)$otp,
+      // Hashato, non in chiaro: è un fallback usato solo se l'inserimento nel
+      // DB fallisce, non c'è motivo di tenere una seconda copia leggibile.
+      'otp_hash' => password_hash((string)$otp, PASSWORD_DEFAULT),
       // salvo anche l'ora attuale per vedere se scade
       'ts' => time(),
     ];
@@ -74,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_otp'])) {
     
     $mailSent = @mss_send_mail($email, $subject, $body);
     if (!$mailSent) {
-      error_log("OTP fallito via email per $email. CODICE: $otp");
+      error_log("OTP fallito via email per $email.");
       $err = 'mail_failed';
       $otpStep = false;
       unset($_SESSION['pending_reg']);
@@ -89,7 +100,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_otp'])) {
   $code = trim($_POST['otp_code'] ?? '');
   $pending = $_SESSION['pending_reg'] ?? null;
   $ok = false;
-  if ($pending && $code !== '') {
+  // Troppi codici sbagliati di fila per questa email? Blocchiamo un po',
+  // altrimenti le 6 cifre si potrebbero indovinare a tentativi.
+  $chiaveLimiteOtpReg = 'otp:register:' . strtolower($pending['email'] ?? '');
+  $bloccato = $pending && mss_rate_limited($conn, $chiaveLimiteOtpReg);
+  if ($pending && !$bloccato && $code !== '') {
     // Verifica contro DB (prioritario)
     try {
       $stmt = $conn->prepare("SELECT id, code_hash, expires_at, used_at FROM user_otps WHERE email = ? AND purpose = 'registration' ORDER BY id DESC LIMIT 1");
@@ -117,11 +132,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_otp'])) {
       error_log('OTP DB verify error: ' . $e->getMessage());
     }
     // Fallback alla sessione se il DB non conferma ma i dati sono presenti
-    if (!$ok && $code === (string)($pending['otp'] ?? '') && (time() - (int)($pending['ts'] ?? 0)) <= 600) {
+    if (!$ok && !empty($pending['otp_hash']) && password_verify($code, (string)$pending['otp_hash'])
+        && (time() - (int)($pending['ts'] ?? 0)) <= 600) {
       $ok = true;
     }
   }
   if ($ok) {
+    mss_rate_limit_clear($conn, $chiaveLimiteOtpReg);
     // Render form auto-post verso create_account.php con i dati salvati
     echo '<form id="otp-pass" method="POST" action="php/create_account.php">'
        . '<input type="hidden" name="nome" value="' . htmlspecialchars($pending['nome']) . '">'
@@ -132,6 +149,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_otp'])) {
        . '</form>'
        . '<script>document.getElementById("otp-pass").submit();</script>';
     exit();
+  }
+  if ($pending && !$bloccato) {
+    mss_rate_limit_hit($conn, $chiaveLimiteOtpReg);
   }
   $err = 'otp';
   $otpStep = true;
@@ -150,7 +170,7 @@ $preEmail = htmlspecialchars($_GET['email'] ?? ($_SESSION['pending_reg']['email'
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
 
   <body>
@@ -223,6 +243,11 @@ $preEmail = htmlspecialchars($_GET['email'] ?? ($_SESSION['pending_reg']['email'
               </button>
             </form>
             <?php else: ?>
+            <?php if (defined('MSS_DEMO_MODE') && isset($_SESSION['mss_demo_otp'])): ?>
+              <div class="alert alert-info small text-start">
+                <i class="bi bi-info-circle me-1"></i> Demo: le email non partono davvero. Il codice è <strong><?= (int)$_SESSION['mss_demo_otp'] ?></strong>.
+              </div>
+            <?php endif; ?>
             <form action="registrationPage.php" method="POST">
               <div class="mb-3 text-start">
                 <label class="form-label fw-semibold mss-text-heading">Codice OTP inviato a <?= htmlspecialchars($preEmail) ?></label>

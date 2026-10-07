@@ -41,6 +41,7 @@ It includes both the public-facing storefront (catalog, cart, checkout) and a co
 
 ### System
 - **Auto-migration**: MySQL schema is automatically created and updated on startup
+- **Demo mode**: without database credentials the shop runs on a private SQLite database per visitor, filled with a sample catalogue, customers and orders
 - **Email system**: PHPMailer + Gmail SMTP with branded HTML templates, all emails logged in `emails_outbox`
 - **Soft delete** for products (trash without physical deletion)
 - **Real-time inventory**: immediate stock deduction on cart add, restoration on expiry/removal
@@ -50,7 +51,7 @@ It includes both the public-facing storefront (catalog, cart, checkout) and a co
 | Category | Technology |
 |---|---|
 | **Backend** | PHP (vanilla, no framework) |
-| **Database** | MySQL / MariaDB |
+| **Database** | MySQL / MariaDB (SQLite for the built-in demo) |
 | **Frontend CSS** | Bootstrap 5.3.2, Bootstrap Icons 1.11.3 |
 | **Font** | Inter (Google Fonts) |
 | **JavaScript** | Vanilla JS (ES6+), Fetch API, IntersectionObserver |
@@ -82,13 +83,28 @@ mike-sully-shop/
 │   ├── js/                   # JavaScript (cart, wishlist)
 │   └── img/                  # Product images and logo
 └── php/
-    ├── db_connection.php      # MySQL connection
+    ├── db_connection.php      # MySQL connection, or demo mode
+    ├── demo_db.php            # Demo backend: SQLite per visitor with sample data
     ├── site_bootstrap.php     # Schema auto-migration
     ├── mailer.php             # Email sending
     ├── auth_check.php         # Access control middleware
     ├── order_functions.php    # Order business logic
     └── vendor/                # PHPMailer (Composer)
 ```
+
+## Running locally
+
+Requirements: PHP 8.1+ with `mysqli`, and `pdo_sqlite` for the demo mode.
+
+```bash
+php -S localhost:8000
+```
+
+Then open `http://localhost:8000/homePage.php`.
+
+- **With MySQL**: set `MSS_DB_HOST`, `MSS_DB_USER`, `MSS_DB_PASS`, `MSS_DB_NAME` (default `mikesully_shop`) and `MSS_DB_PORT` (default `3306`). The schema is created on the first request.
+- **Demo mode**: if `MSS_DB_PASS` is not set (or the connection fails), each visitor gets a private SQLite database with sample data, reset after a day. Emails are not sent and verification codes are shown on screen. Demo accounts: `admin@mikesully.shop` / `admin123` (admin) and `mike@monsters.com` / `password123` (customer).
+- **Emails**: set `MSS_MAIL_HOST`, `MSS_MAIL_PORT`, `MSS_MAIL_USERNAME`, `MSS_MAIL_PASSWORD`, `MSS_MAIL_FROM_EMAIL` and `MSS_MAIL_FROM_NAME` (see `php/mail_config.php`). Credentials never go in the code.
 
 ## Future Improvements
 

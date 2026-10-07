@@ -1,11 +1,22 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'db_connection.php';
 require_once 'mailer.php';
 
 // Se non c'è nessuno loggato o se è un accesso sospetto via URL
 if (!isset($_SESSION['utente_id']) || $_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: ../profilo.php');
+    exit();
+}
+
+if (!mss_csrf_valid()) {
+    header('Location: ../profilo.php?error=csrf');
     exit();
 }
 
@@ -16,15 +27,23 @@ $idUtenteLoggato = (int)$_SESSION['utente_id'];
 
 if (isset($_POST['confirm_otp'])) {
     $codiceInserito = trim($_POST['otp_code'] ?? '');
-    
+
     // Recuperiamo dalla memoria del server quali modifiche stava cercando di fare
     $modificheInSospeso = $_SESSION['pending_profile_update'] ?? null;
-    
+
     if (!$modificheInSospeso) {
         header('Location: ../profilo.php?error=otp'); // Modifiche scadute o inesistenti
         exit();
     }
-    
+
+    // Troppi codici sbagliati di fila per questo utente? Blocchiamo un po',
+    // altrimenti le 6 cifre dell'OTP si potrebbero indovinare a tentativi.
+    $chiaveLimiteOtp = 'otp:profile:' . $idUtenteLoggato;
+    if (mss_rate_limited($conn, $chiaveLimiteOtp)) {
+        header('Location: ../profilo.php?error=otp');
+        exit();
+    }
+
     $codiceCorretto = false;
     
     if ($codiceInserito !== '') {
@@ -68,13 +87,16 @@ if (isset($_POST['confirm_otp'])) {
         }
         
         // Piano di riserva (Fallback): Se il DB andasse in crash, controlliamo se il codice è salvato nella memoria temporanea del server (session)
-        if (!$codiceCorretto && $codiceInserito === (string)($modificheInSospeso['otp'] ?? '') && (time() - (int)($modificheInSospeso['ts'] ?? 0)) <= 600) {
+        if (!$codiceCorretto && !empty($modificheInSospeso['otp_hash'])
+            && password_verify($codiceInserito, (string)$modificheInSospeso['otp_hash'])
+            && (time() - (int)($modificheInSospeso['ts'] ?? 0)) <= 600) {
             $codiceCorretto = true;
         }
     }
     
     // Se ha indovinato il codice, FINALMENTE applichiamo le modifiche al profilo!
     if ($codiceCorretto) {
+        mss_rate_limit_clear($conn, $chiaveLimiteOtp);
         $nuovoNome = $modificheInSospeso['nome'];
         $nuovoCognome = $modificheInSospeso['cognome'];
         $nuovaEmail = $modificheInSospeso['email'];
@@ -96,6 +118,7 @@ if (isset($_POST['confirm_otp'])) {
         exit();
     } else {
         // Codice sbagliato!
+        mss_rate_limit_hit($conn, $chiaveLimiteOtp);
         header('Location: ../profilo.php?error=otp');
         exit();
     }
@@ -108,12 +131,31 @@ if (isset($_POST['confirm_otp'])) {
 $nuovoNome = trim($_POST['nome'] ?? '');
 $nuovoCognome = trim($_POST['cognome'] ?? '');
 $nuovaEmail = trim($_POST['email'] ?? '');
+$passwordAttualeInserita = $_POST['current_password'] ?? '';
 $nuovaPasswordTesto = $_POST['password'] ?? '';
 $confermaPasswordTesto = $_POST['password_confirm'] ?? '';
 
 // Controlli base di validità (campi vuoti o mail malformate)
 if ($nuovoNome === '' || $nuovoCognome === '' || !filter_var($nuovaEmail, FILTER_VALIDATE_EMAIL)) {
     header('Location: ../profilo.php?error=campi');
+    exit();
+}
+
+// Qualunque modifica al profilo (nome, cognome, email o password) richiede di
+// riconfermare la password attuale. Senza questo controllo, un sito esterno
+// potrebbe far partire questa richiesta di nascosto (CSRF) mentre la vittima
+// è loggata e cambiarle l'email senza che se ne accorga — da lì basterebbe
+// intercettare l'OTP mandato alla "vecchia" email (ormai quella dell'attaccante)
+// per prendersi anche la password. Chiedere la password attuale blocca la
+// catena all'origine: chi manda la richiesta forzata non la conosce.
+$istruzioneVerificaPwd = $conn->prepare("SELECT email, password FROM users WHERE id = ? LIMIT 1");
+$istruzioneVerificaPwd->bind_param("i", $idUtenteLoggato);
+$istruzioneVerificaPwd->execute();
+$datiAttualiUtente = $istruzioneVerificaPwd->get_result()->fetch_assoc();
+$istruzioneVerificaPwd->close();
+
+if (!$datiAttualiUtente || $passwordAttualeInserita === '' || !password_verify($passwordAttualeInserita, $datiAttualiUtente['password'])) {
+    header('Location: ../profilo.php?error=current_password');
     exit();
 }
 
@@ -139,19 +181,17 @@ if ($nuovaPasswordTesto !== '') {
     }
     
     // Ha scritto una password uguale a quella che ha già? Inutile.
-    $istruzione = $conn->prepare("SELECT email, password FROM users WHERE id = ? LIMIT 1");
-    $istruzione->bind_param("i", $idUtenteLoggato);
-    $istruzione->execute();
-    $datiAttualiUtente = $istruzione->get_result()->fetch_assoc();
-    $istruzione->close();
-    
-    if ($datiAttualiUtente && password_verify($nuovaPasswordTesto, $datiAttualiUtente['password'])) {
+    // ($datiAttualiUtente è già stato caricato sopra per verificare la password attuale.)
+    if (password_verify($nuovaPasswordTesto, $datiAttualiUtente['password'])) {
         header('Location: ../profilo.php?error=same_password');
         exit();
     }
     
     // La password è nuova e valida -> ATTIVIAMO IL SISTEMA DI SICUREZZA (Generazione Codice OTP)
     $codiceSegreto = random_int(100000, 999999); // Genera 6 numeri a caso
+    if (defined('MSS_DEMO_MODE')) {
+        $_SESSION['mss_demo_otp'] = $codiceSegreto; // in demo la mail non parte: il codice si mostra a schermo
+    }
     
     // Mettiamo in cassaforte (sessione) i dati che voleva salvare, per riprenderli nella FASE 2
     $_SESSION['pending_profile_update'] = [
@@ -159,7 +199,10 @@ if ($nuovaPasswordTesto !== '') {
         'cognome' => $nuovoCognome,
         'email' => $nuovaEmail,
         'password' => $nuovaPasswordTesto,
-        'otp' => (string)$codiceSegreto,
+        // Hashato anche qui (non solo nel DB): è comunque un fallback usato solo
+        // se l'inserimento nel DB fallisce, ma non c'è motivo di tenere una
+        // seconda copia del codice in chiaro nella sessione.
+        'otp_hash' => password_hash((string)$codiceSegreto, PASSWORD_DEFAULT),
         'ts' => time()
     ];
     
@@ -190,7 +233,7 @@ if ($nuovaPasswordTesto !== '') {
     $emailInviata = @mss_send_mail($emailStorica, $oggettoMail, $testoMail);
     
     if (!$emailInviata) {
-        error_log("OTP fallito via email per $emailStorica. CODICE: $codiceSegreto");
+        error_log("OTP fallito via email per $emailStorica.");
         unset($_SESSION['pending_profile_update']);
         header('Location: ../profilo.php?error=mail_failed');
         exit();

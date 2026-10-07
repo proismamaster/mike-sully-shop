@@ -1,5 +1,11 @@
 <?php
+// Cookie di sessione più severi: niente accesso da JS, solo HTTPS, non
+// inviato in richieste cross-site — riduce hijacking/CSRF sulla sessione.
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Lax');
 session_start();
+
 require_once 'php/db_connection.php';
 require_once 'php/order_functions.php';
 
@@ -14,12 +20,12 @@ $orders = mss_fetch_orders_for_user($conn, $utenteId);
 <!doctype html>
 <html lang="it">
   <head>
-    <title>I miei orders - MikeSullyShop</title>
+    <title>I miei ordini - MikeSullyShop</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= filemtime(__DIR__ . '/assets/css/style.css') ?>" />
   </head>
   <body class="mss-page">
     <?php include 'php/header.php'; ?>
@@ -27,7 +33,7 @@ $orders = mss_fetch_orders_for_user($conn, $utenteId);
     <div class="container mt-4 mb-5 fade-in">
       <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-4">
         <h2 class="mss-section-title mb-0">
-          <i class="bi bi-receipt me-2 text-gradient"></i> I miei orders
+          <i class="bi bi-receipt me-2 text-gradient"></i> I miei ordini
         </h2>
         <a href="homePage.php" class="btn mss-btn-outline">
           <i class="bi bi-bag-heart me-1"></i> Continua a comprare
@@ -163,7 +169,7 @@ $orders = mss_fetch_orders_for_user($conn, $utenteId);
     <?php include 'php/footer.php'; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/js/mss-cart.js"></script>
+    <script src="assets/js/mss-cart.js?v=<?= filemtime(__DIR__ . '/assets/js/mss-cart.js') ?>"></script>
     <script>
       function toggleDetails(id) {
         const row = document.getElementById('details-' + id);
