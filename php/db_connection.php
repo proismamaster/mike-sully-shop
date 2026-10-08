@@ -17,7 +17,7 @@ set_exception_handler(function (Throwable $e) {
 
 $host = getenv('MSS_DB_HOST') ?: 'localhost';
 $user = getenv('MSS_DB_USER') ?: 'root';
-$pass = getenv('MSS_DB_PASS');
+$pass = getenv('MSS_DB_PASS'); // false se la variabile non è impostata
 $dbname = getenv('MSS_DB_NAME') ?: 'mikesully_shop';
 $port = getenv('MSS_DB_PORT') ?: '3306';
 
@@ -29,19 +29,21 @@ function try_connect($host, $user, $pass, $dbname, $port) {
     return $conn;
 }
 
-$conn = null;
-
 // Ci connettiamo SOLO con le credenziali indicate esplicitamente via variabili d'ambiente.
 // Niente più tentativi con utenze di default deboli (root senza password, root/root, ecc.):
 // se non è configurato nulla, passiamo alla demo: un database SQLite privato per visitatore (demo_db.php).
-if ($pass !== null) {
-    try { $conn = try_connect($host, $user, $pass, $dbname, $port); } catch (mysqli_sql_exception $e) {}
-}
-
-if (!$conn) {
-    require_once __DIR__ . '/site_bootstrap.php';
+require_once __DIR__ . '/site_bootstrap.php';
+if ($pass === false) {
     require_once __DIR__ . '/demo_db.php';
 } else {
-    require_once __DIR__ . '/site_bootstrap.php';
+    try {
+        $conn = try_connect($host, $user, $pass, $dbname, $port);
+    } catch (mysqli_sql_exception $e) {
+        // Credenziali impostate ma database irraggiungibile: ci fermiamo, niente demo.
+        // La demo ha credenziali admin pubbliche: su un sito vero sarebbe un pannello aperto a tutti.
+        error_log('Connessione MySQL fallita: ' . $e->getMessage());
+        http_response_code(503);
+        exit('Servizio momentaneamente non disponibile. Riprova più tardi.');
+    }
     mss_bootstrap_schema($conn);
 }

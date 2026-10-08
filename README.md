@@ -103,7 +103,7 @@ php -S localhost:8000
 Then open `http://localhost:8000/homePage.php`.
 
 - **With MySQL**: set `MSS_DB_HOST`, `MSS_DB_USER`, `MSS_DB_PASS`, `MSS_DB_NAME` (default `mikesully_shop`) and `MSS_DB_PORT` (default `3306`). The schema is created on the first request.
-- **Demo mode**: if `MSS_DB_PASS` is not set (or the connection fails), each visitor gets a private SQLite database with sample data, reset after a day. Emails are not sent and verification codes are shown on screen. Demo accounts: `admin@mikesully.shop` / `admin123` (admin) and `mike@monsters.com` / `password123` (customer).
+- **Demo mode**: if `MSS_DB_PASS` is not set, each visitor gets a private SQLite database with sample data, reset after a day. If it is set and MySQL is unreachable, the shop answers 503 instead of falling back to the demo (whose admin login is public). Emails are not sent and verification codes are shown on screen. Demo accounts: `admin@mikesully.shop` / `admin123` (admin) and `mike@monsters.com` / `password123` (customer).
 - **Emails**: set `MSS_MAIL_HOST`, `MSS_MAIL_PORT`, `MSS_MAIL_USERNAME`, `MSS_MAIL_PASSWORD`, `MSS_MAIL_FROM_EMAIL` and `MSS_MAIL_FROM_NAME` (see `php/mail_config.php`). Credentials never go in the code.
 
 ## Future Improvements
